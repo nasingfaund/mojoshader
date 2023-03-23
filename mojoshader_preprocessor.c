@@ -1265,6 +1265,9 @@ static int replace_and_push_macro(Context *ctx, const Define *def,
         return 0;
 
     IncludeState *state = ctx->include_stack;
+    const char* fname = state->filename;
+    const unsigned int line = state->line;
+
     IncludeState* stateOriginal = state;
     if (!push_source(ctx, state->filename, def->definition,
                      strlen(def->definition), state->line, NULL))
@@ -1274,6 +1277,7 @@ static int replace_and_push_macro(Context *ctx, const Define *def,
     } // if
 
     state = ctx->include_stack;
+
     while (lexer(state) != TOKEN_EOI)
     {
         int wantorig = 0;
@@ -1344,18 +1348,21 @@ static int replace_and_push_macro(Context *ctx, const Define *def,
             goto replace_and_push_macro_failed;
     } // while
 
+    pop_source(ctx); // ditch the macro.
+
     //if (const Define* def2 = find_define(ctx, def->definition))
     {
         //if (def2->paramcount > 0)
         {
             /**omg = def->definition;*/
             buffer_append(buffer, stateOriginal->source, strlen(stateOriginal->source));
-            // update_state(state, 1, state->source, s->source_base + s->orig_length, TOKEN_EOI);
-            stateOriginal->source = state->source_base + state->orig_length;
-            stateOriginal->token = state->source_base + state->orig_length;
-            stateOriginal->tokenval = TOKEN_EOI;
-            stateOriginal->tokenlen = 0;
-            stateOriginal->bytes_left = 0;
+            //// update_state(state, 1, state->source, s->source_base + s->orig_length, TOKEN_EOI);
+            //stateOriginal->source = state->source_base + state->orig_length;
+            //stateOriginal->token = state->source_base + state->orig_length;
+            //stateOriginal->tokenval = TOKEN_EOI;
+            //stateOriginal->tokenlen = 0;
+            //stateOriginal->bytes_left = 0;
+            pop_source(ctx);
         }
     }
 
@@ -1364,12 +1371,12 @@ static int replace_and_push_macro(Context *ctx, const Define *def,
         goto replace_and_push_macro_failed;
 
     buffer_destroy(buffer);
-    pop_source(ctx); // ditch the macro.
+
     state = ctx->include_stack;
 
 
     //if (!push_source(ctx, state->filename, (*omg).c_str(), (*omg).length(), state->line, close_define_include))
-    if (!push_source(ctx, state->filename, final, strlen(final), state->line, close_define_include))
+    if (!push_source(ctx, fname, final, strlen(final), line, close_define_include))
     {
         Free(ctx, final);
         return 0;
