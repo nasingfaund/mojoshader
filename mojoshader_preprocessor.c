@@ -10,6 +10,8 @@
 #define __MOJOSHADER_INTERNAL__ 1
 #include "mojoshader_internal.h"
 
+#include <string> // the C++ Standard String Class
+
 #if DEBUG_PREPROCESSOR
     #define print_debug_token(token, len, val) \
         MOJOSHADER_print_debug_token("PREPROCESSOR", token, len, val)
@@ -1263,6 +1265,7 @@ static int replace_and_push_macro(Context *ctx, const Define *def,
         return 0;
 
     IncludeState *state = ctx->include_stack;
+    IncludeState* stateOriginal = state;
     if (!push_source(ctx, state->filename, def->definition,
                      strlen(def->definition), state->line, NULL))
     {
@@ -1341,15 +1344,32 @@ static int replace_and_push_macro(Context *ctx, const Define *def,
             goto replace_and_push_macro_failed;
     } // while
 
+    //if (const Define* def2 = find_define(ctx, def->definition))
+    {
+        //if (def2->paramcount > 0)
+        {
+            /**omg = def->definition;*/
+            buffer_append(buffer, stateOriginal->source, strlen(stateOriginal->source));
+            // update_state(state, 1, state->source, s->source_base + s->orig_length, TOKEN_EOI);
+            stateOriginal->source = state->source_base + state->orig_length;
+            stateOriginal->token = state->source_base + state->orig_length;
+            stateOriginal->tokenval = TOKEN_EOI;
+            stateOriginal->tokenlen = 0;
+            stateOriginal->bytes_left = 0;
+        }
+    }
+
     final = buffer_flatten(buffer);
     if (!final)
         goto replace_and_push_macro_failed;
 
     buffer_destroy(buffer);
-    pop_source(ctx);  // ditch the macro.
+    pop_source(ctx); // ditch the macro.
     state = ctx->include_stack;
-    if (!push_source(ctx, state->filename, final, strlen(final), state->line,
-                     close_define_include))
+
+
+    //if (!push_source(ctx, state->filename, (*omg).c_str(), (*omg).length(), state->line, close_define_include))
+    if (!push_source(ctx, state->filename, final, strlen(final), state->line, close_define_include))
     {
         Free(ctx, final);
         return 0;
@@ -1558,8 +1578,39 @@ static int handle_pp_identifier(Context *ctx)
     else if (def->paramcount != 0)
         return handle_macro_args(ctx, sym, def);
 
+    Buffer* out = buffer_create(128, MallocBridge, FreeBridge, ctx);
+    buffer_append(out, def->definition, strlen(def->definition));
+
+    //std::string test = def->definition;
+    std::string* omg = new std::string();
+    *omg = def->definition;;
+
+    if (const Define* def2 = find_define(ctx, def->definition))
+    {
+        if (def2->paramcount > 0)
+        {
+            //*omg = def->definition;
+            //*omg += state->source;
+
+            buffer_append(out, state->source, strlen(state->source));
+            pop_source(ctx);
+            //// update_state(state, 1, state->source, s->source_base + s->orig_length, TOKEN_EOI);
+            //state->source = state->source_base + state->orig_length;
+            //state->token = state->source_base + state->orig_length;
+            //state->tokenval = TOKEN_EOI;
+            //state->tokenlen = 0;
+            //state->bytes_left = 0;
+        }
+    }
+    
+    size_t finalLength = buffer_size(out);
+    char* final = buffer_flatten(out);
+    buffer_destroy(out);
+
     const size_t deflen = strlen(def->definition);
-    return push_source(ctx, fname, def->definition, deflen, line, NULL);
+    //return push_source(ctx, fname, def->definition, deflen, line, NULL);
+    return push_source(ctx, fname, final, finalLength, line, NULL);
+   // return push_source(ctx, fname, (*omg).data(), (*omg).length(), line, NULL);
 } // handle_pp_identifier
 
 
