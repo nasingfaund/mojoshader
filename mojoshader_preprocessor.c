@@ -1350,21 +1350,21 @@ static int replace_and_push_macro(Context *ctx, const Define *def,
 
     pop_source(ctx); // ditch the macro.
 
-    //if (const Define* def2 = find_define(ctx, def->definition))
-    {
-        //if (def2->paramcount > 0)
-        {
-            /**omg = def->definition;*/
-            buffer_append(buffer, stateOriginal->source, strlen(stateOriginal->source));
-            //// update_state(state, 1, state->source, s->source_base + s->orig_length, TOKEN_EOI);
-            //stateOriginal->source = state->source_base + state->orig_length;
-            //stateOriginal->token = state->source_base + state->orig_length;
-            //stateOriginal->tokenval = TOKEN_EOI;
-            //stateOriginal->tokenlen = 0;
-            //stateOriginal->bytes_left = 0;
-            pop_source(ctx);
-        }
-    }
+    ////if (const Define* def2 = find_define(ctx, def->definition))
+    //{
+    //    //if (def2->paramcount > 0)
+    //    {
+    //        /**omg = def->definition;*/
+    //        buffer_append(buffer, stateOriginal->source, strlen(stateOriginal->source));
+    //        //// update_state(state, 1, state->source, s->source_base + s->orig_length, TOKEN_EOI);
+    //        //stateOriginal->source = state->source_base + state->orig_length;
+    //        //stateOriginal->token = state->source_base + state->orig_length;
+    //        //stateOriginal->tokenval = TOKEN_EOI;
+    //        //stateOriginal->tokenlen = 0;
+    //        //stateOriginal->bytes_left = 0;
+    //        pop_source(ctx);
+    //    }
+    //}
 
     final = buffer_flatten(buffer);
     if (!final)
@@ -1562,6 +1562,38 @@ handle_macro_args_failed:
     return retval;
 } // handle_macro_args
 
+static int findClosingParenthesis(const char* str, int len)
+{
+    int i, count = 0, last_close = -1;
+    for (i = 0; i < len; i++)
+    {
+        if (str[i] == '(')
+        {
+            count++;
+            if (count == 1)
+            {
+                printf("First opening parenthesis found at position %d\n", i);
+            }
+        }
+        else if (str[i] == ')')
+        {
+            count--;
+            if (count == 0)
+            {
+                last_close = i;
+                printf("Matching closing parenthesis found at position %d\n", i);
+                return last_close;
+            }
+        }
+
+        if (count == 0 && last_close != -1)
+        {
+            break;
+        }
+    }
+
+    return -1;
+}
 
 static int handle_pp_identifier(Context *ctx)
 {
@@ -1598,9 +1630,18 @@ static int handle_pp_identifier(Context *ctx)
         {
             //*omg = def->definition;
             //*omg += state->source;
+            int closinParenthesis = findClosingParenthesis(state->source, strlen(state->source));
+            if (closinParenthesis)
+            {
+                buffer_append(out, state->source, closinParenthesis+1);
+            
+                   
+                state->bytes_left -= closinParenthesis + 1 ;
+                state->source = state->source + closinParenthesis + 1;
+                state->token = state->source;
 
-            buffer_append(out, state->source, strlen(state->source));
-            pop_source(ctx);
+            }
+            //pop_source(ctx);
             //// update_state(state, 1, state->source, s->source_base + s->orig_length, TOKEN_EOI);
             //state->source = state->source_base + state->orig_length;
             //state->token = state->source_base + state->orig_length;
