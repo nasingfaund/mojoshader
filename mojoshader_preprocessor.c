@@ -1253,6 +1253,52 @@ static inline void handle_pp_ifndef(Context *ctx)
 } // handle_pp_ifndef
 
 
+static int isOpeningParenthesisNext(const char* str, int len)
+{
+    for (int i = 0; i < len; i++)
+    {
+        if (isspace(str[i])) continue;
+
+        if (str[i] == '(')
+            return i;
+        else
+            return -1;
+    }
+}
+
+static int findClosingParenthesis(const char* str, int len)
+{
+    int i, count = 0, last_close = -1;
+    for (i = 0; i < len; i++)
+    {
+        if (str[i] == '(')
+        {
+            count++;
+            if (count == 1)
+            {
+                printf("First opening parenthesis found at position %d\n", i);
+            }
+        }
+        else if (str[i] == ')')
+        {
+            count--;
+            if (count == 0)
+            {
+                last_close = i;
+                printf("Matching closing parenthesis found at position %d\n", i);
+                return last_close;
+            }
+        }
+
+        if (count == 0 && last_close != -1)
+        {
+            break;
+        }
+    }
+
+    return -1;
+}
+
 static int replace_and_push_macro(Context *ctx, const Define *def,
                                   const Define *params)
 {
@@ -1278,6 +1324,11 @@ static int replace_and_push_macro(Context *ctx, const Define *def,
 
     state = ctx->include_stack;
 
+    std::string tmp;
+
+    bool firstIdentifier = true;
+    const char* firstIdent;
+    int fistIdentLength = 0;
     while (lexer(state) != TOKEN_EOI)
     {
         int wantorig = 0;
@@ -1331,6 +1382,13 @@ static int replace_and_push_macro(Context *ctx, const Define *def,
 
         if (state->tokenval == TOKEN_IDENTIFIER)
         {
+            if (firstIdentifier)
+            {
+                firstIdent = state->token;
+                fistIdentLength = state->tokenlen;
+                firstIdentifier = false;
+            }
+
             arg = find_macro_arg(state, params);
             if (arg != NULL)
             {
@@ -1350,21 +1408,33 @@ static int replace_and_push_macro(Context *ctx, const Define *def,
 
     pop_source(ctx); // ditch the macro.
 
-    ////if (const Define* def2 = find_define(ctx, def->definition))
-    //{
-    //    //if (def2->paramcount > 0)
-    //    {
-    //        /**omg = def->definition;*/
-    //        buffer_append(buffer, stateOriginal->source, strlen(stateOriginal->source));
-    //        //// update_state(state, 1, state->source, s->source_base + s->orig_length, TOKEN_EOI);
-    //        //stateOriginal->source = state->source_base + state->orig_length;
-    //        //stateOriginal->token = state->source_base + state->orig_length;
-    //        //stateOriginal->tokenval = TOKEN_EOI;
-    //        //stateOriginal->tokenlen = 0;
-    //        //stateOriginal->bytes_left = 0;
-    //        pop_source(ctx);
-    //    }
-    //}
+    char* mehmeh = buffer_flatten(buffer);
+    buffer_append(buffer, mehmeh, strlen(mehmeh));
+    tmp = mehmeh;
+    size_t bracket = tmp.find('(');
+    size_t empty = tmp.find(' ');
+    bracket = bracket == std::string::npos ? tmp.length() : bracket;
+    empty = empty == std::string::npos ? tmp.length() : empty;
+    size_t cutHere = min(empty, bracket);
+    tmp = tmp.substr(0, cutHere);
+
+    if (const Define* def2 = find_define(ctx, tmp.c_str()))
+    {
+        int opening = isOpeningParenthesisNext(stateOriginal->source, stateOriginal->bytes_left);
+
+        if (opening >= 0 && def2->paramcount > 0)
+        {
+            int closinParenthesis = findClosingParenthesis(stateOriginal->source, stateOriginal->bytes_left);
+            if (closinParenthesis >= 0)
+            {
+                buffer_append(buffer, stateOriginal->source, closinParenthesis + 1);
+
+                stateOriginal->bytes_left -= closinParenthesis + 1;
+                stateOriginal->source = stateOriginal->source + closinParenthesis + 1;
+                stateOriginal->token = stateOriginal->source;
+            }
+        }
+    }
 
     final = buffer_flatten(buffer);
     if (!final)
@@ -1562,39 +1632,6 @@ handle_macro_args_failed:
     return retval;
 } // handle_macro_args
 
-static int findClosingParenthesis(const char* str, int len)
-{
-    int i, count = 0, last_close = -1;
-    for (i = 0; i < len; i++)
-    {
-        if (str[i] == '(')
-        {
-            count++;
-            if (count == 1)
-            {
-                printf("First opening parenthesis found at position %d\n", i);
-            }
-        }
-        else if (str[i] == ')')
-        {
-            count--;
-            if (count == 0)
-            {
-                last_close = i;
-                printf("Matching closing parenthesis found at position %d\n", i);
-                return last_close;
-            }
-        }
-
-        if (count == 0 && last_close != -1)
-        {
-            break;
-        }
-    }
-
-    return -1;
-}
-
 static int handle_pp_identifier(Context *ctx)
 {
     if (ctx->recursion_count++ >= 256)  // !!! FIXME: gcc can figure this out.
@@ -1631,7 +1668,7 @@ static int handle_pp_identifier(Context *ctx)
             //*omg = def->definition;
             //*omg += state->source;
             int closinParenthesis = findClosingParenthesis(state->source, strlen(state->source));
-            if (closinParenthesis)
+            if (closinParenthesis >= 0)
             {
                 buffer_append(out, state->source, closinParenthesis+1);
             
