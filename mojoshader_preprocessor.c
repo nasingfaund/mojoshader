@@ -1408,6 +1408,7 @@ static int replace_and_push_macro(Context *ctx, const Define *def,
     // flatten emptied buffer, we want to concatenate original contents, lets add it back
     buffer_append(buffer, finalizedMacro, strlen(finalizedMacro));
 
+    // Test if the expanded macro is also a macro and accepts params. If it does we need to add the params to the next IncludeState as well so they can be expanded with the macro
     // find end of the macro it is either separated by empty space or '(' character
     int macroEnd = findMacroEnd(finalizedMacro, strlen(finalizedMacro));
     if (macroEnd > 0)
@@ -1664,6 +1665,7 @@ static int handle_pp_identifier(Context *ctx)
     Buffer* out = buffer_create(128, MallocBridge, FreeBridge, ctx);
     buffer_append(out, def->definition, strlen(def->definition));
 
+    // Test if the expanded macro is also a macro and accepts params. If it does we need to add the params to the next IncludeState as well so they can be expanded with the macro
     // does the macro expension convert to another macro?
     if (const Define* def2 = find_define(ctx, def->definition))
     {
