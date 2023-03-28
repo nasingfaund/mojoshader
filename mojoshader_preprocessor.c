@@ -1253,6 +1253,18 @@ static inline void handle_pp_ifndef(Context *ctx)
 } // handle_pp_ifndef
 
 
+
+static int findMacroEnd(const char* str, int len)
+{
+    for (int i = 0; i < len; i++)
+    {
+        if (str[i] == '(' || isspace(str[i]))
+            return i;
+    }
+
+    return len;
+}
+
 static int isOpeningParenthesisNext(const char* str, int len)
 {
     for (int i = 0; i < len; i++)
@@ -1264,6 +1276,8 @@ static int isOpeningParenthesisNext(const char* str, int len)
         else
             return -1;
     }
+
+    return -1;
 }
 
 static int findClosingParenthesis(const char* str, int len)
@@ -1406,35 +1420,47 @@ static int replace_and_push_macro(Context *ctx, const Define *def,
             goto replace_and_push_macro_failed;
     } // while
 
-    pop_source(ctx); // ditch the macro.
 
-    char* mehmeh = buffer_flatten(buffer);
-    buffer_append(buffer, mehmeh, strlen(mehmeh));
-    tmp = mehmeh;
-    size_t bracket = tmp.find('(');
-    size_t empty = tmp.find(' ');
-    bracket = bracket == std::string::npos ? tmp.length() : bracket;
-    empty = empty == std::string::npos ? tmp.length() : empty;
-    size_t cutHere = min(empty, bracket);
-    tmp = tmp.substr(0, cutHere);
-
-    if (const Define* def2 = find_define(ctx, tmp.c_str()))
+    char* finalizedMacro = buffer_flatten(buffer);
+    // find end of the macro it is either separated by empty space or '(' character
+    int macroEnd = findMacroEnd(finalizedMacro, strlen(finalizedMacro));
+    if (macroEnd > 0)
     {
-        int opening = isOpeningParenthesisNext(stateOriginal->source, stateOriginal->bytes_left);
+        // create a string to test in find_define
+        char* possibleMacro = (char*)Malloc(ctx, macroEnd + 1);
+        memcpy(possibleMacro, finalizedMacro, macroEnd);
+        possibleMacro[macroEnd] = 0;
 
-        if (opening >= 0 && def2->paramcount > 0)
+        // if macro exist
+        if (const Define* def2 = find_define(ctx, possibleMacro))
         {
-            int closinParenthesis = findClosingParenthesis(stateOriginal->source, stateOriginal->bytes_left);
-            if (closinParenthesis >= 0)
+            // is the result of macro expansion a function like macro?
+            int opening = isOpeningParenthesisNext(stateOriginal->source, stateOriginal->bytes_left);
+            // and does the macro actually accepts params?
+            if (opening >= 0 && def2->paramcount > 0)
             {
-                buffer_append(buffer, stateOriginal->source, closinParenthesis + 1);
+                // find closing parenthesis of the newly expanded macro
+                int closinParenthesis = findClosingParenthesis(stateOriginal->source, stateOriginal->bytes_left);
+                if (closinParenthesis >= 0)
+                {
+                    // earlier flattern emptied buffer, we want to concatenate original contents, lets add it back
+                    buffer_append(buffer, finalizedMacro, strlen(finalizedMacro));
+                    // add the function params to the future include state so it can be processed
+                    buffer_append(buffer, stateOriginal->source, closinParenthesis + 1);
 
-                stateOriginal->bytes_left -= closinParenthesis + 1;
-                stateOriginal->source = stateOriginal->source + closinParenthesis + 1;
-                stateOriginal->token = stateOriginal->source;
+                    // move the "cursor" of the original state to reflect that the params were processed
+                    stateOriginal->bytes_left -= closinParenthesis + 1;
+                    stateOriginal->source = stateOriginal->source + closinParenthesis + 1;
+                    stateOriginal->token = stateOriginal->source;
+                }
             }
         }
+
+        Free(ctx, possibleMacro);
     }
+    Free(ctx, finalizedMacro);
+
+    pop_source(ctx); // ditch the macro.
 
     final = buffer_flatten(buffer);
     if (!final)
@@ -1444,8 +1470,6 @@ static int replace_and_push_macro(Context *ctx, const Define *def,
 
     state = ctx->include_stack;
 
-
-    //if (!push_source(ctx, state->filename, (*omg).c_str(), (*omg).length(), state->line, close_define_include))
     if (!push_source(ctx, fname, final, strlen(final), line, close_define_include))
     {
         Free(ctx, final);
@@ -1659,7 +1683,7 @@ static int handle_pp_identifier(Context *ctx)
 
     //std::string test = def->definition;
     std::string* omg = new std::string();
-    *omg = def->definition;;
+    *omg = def->definition;
 
     if (const Define* def2 = find_define(ctx, def->definition))
     {
