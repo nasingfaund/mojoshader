@@ -1434,7 +1434,7 @@ static int replace_and_push_macro(Context *ctx, const Define *def,
         // if macro exist
         if (const Define* def2 = find_define(ctx, possibleMacro))
         {
-            // is the result of macro expansion a function like macro?
+            // is the processing cursor actually pointing to the opening paranthesis?
             int opening = isOpeningParenthesisNext(stateOriginal->source, stateOriginal->bytes_left);
             // and does the macro actually accepts params?
             if (opening >= 0 && def2->paramcount > 0)
@@ -1678,34 +1678,23 @@ static int handle_pp_identifier(Context *ctx)
     Buffer* out = buffer_create(128, MallocBridge, FreeBridge, ctx);
     buffer_append(out, def->definition, strlen(def->definition));
 
-    //std::string test = def->definition;
-    std::string* omg = new std::string();
-    *omg = def->definition;
-
+    // does the macro expension convert to another macro?
     if (const Define* def2 = find_define(ctx, def->definition))
     {
-        if (def2->paramcount > 0)
+        // is the processing cursor actually pointing to the opening parenthesis?
+        int opening = isOpeningParenthesisNext(state->source, state->bytes_left);
+        if (def2->paramcount > 0 && opening)
         {
-            //*omg = def->definition;
-            //*omg += state->source;
-            int closinParenthesis = findClosingParenthesis(state->source, strlen(state->source));
-            if (closinParenthesis >= 0)
+            // find where to end
+            int closingParenthesis = findClosingParenthesis(state->source, strlen(state->source));
+            if (closingParenthesis >= 0)
             {
-                buffer_append(out, state->source, closinParenthesis+1);
-            
-                   
-                state->bytes_left -= closinParenthesis + 1 ;
-                state->source = state->source + closinParenthesis + 1;
-                state->token = state->source;
+                buffer_append(out, state->source, closingParenthesis+1);
 
+                state->bytes_left -= closingParenthesis + 1 ;
+                state->source = state->source + closingParenthesis + 1;
+                state->token = state->source;
             }
-            //pop_source(ctx);
-            //// update_state(state, 1, state->source, s->source_base + s->orig_length, TOKEN_EOI);
-            //state->source = state->source_base + state->orig_length;
-            //state->token = state->source_base + state->orig_length;
-            //state->tokenval = TOKEN_EOI;
-            //state->tokenlen = 0;
-            //state->bytes_left = 0;
         }
     }
     
