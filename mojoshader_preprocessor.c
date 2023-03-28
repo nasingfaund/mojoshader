@@ -10,8 +10,6 @@
 #define __MOJOSHADER_INTERNAL__ 1
 #include "mojoshader_internal.h"
 
-#include <string> // the C++ Standard String Class
-
 #if DEBUG_PREPROCESSOR
     #define print_debug_token(token, len, val) \
         MOJOSHADER_print_debug_token("PREPROCESSOR", token, len, val)
@@ -1325,7 +1323,6 @@ static int replace_and_push_macro(Context *ctx, const Define *def,
     const char* fname = state->filename;
     const unsigned int line = state->line;
 
-    IncludeState* stateOriginal = state;
     if (!push_source(ctx, state->filename, def->definition,
                      strlen(def->definition), state->line, NULL))
     {
@@ -1333,13 +1330,9 @@ static int replace_and_push_macro(Context *ctx, const Define *def,
         return 0;
     } // if
 
+    IncludeState* stateOriginal = state;
     state = ctx->include_stack;
 
-    std::string tmp;
-
-    bool firstIdentifier = true;
-    const char* firstIdent;
-    int fistIdentLength = 0;
     while (lexer(state) != TOKEN_EOI)
     {
         int wantorig = 0;
@@ -1393,13 +1386,6 @@ static int replace_and_push_macro(Context *ctx, const Define *def,
 
         if (state->tokenval == TOKEN_IDENTIFIER)
         {
-            if (firstIdentifier)
-            {
-                firstIdent = state->token;
-                fistIdentLength = state->tokenlen;
-                firstIdentifier = false;
-            }
-
             arg = find_macro_arg(state, params);
             if (arg != NULL)
             {
@@ -1703,9 +1689,7 @@ static int handle_pp_identifier(Context *ctx)
     buffer_destroy(out);
 
     const size_t deflen = strlen(def->definition);
-    //return push_source(ctx, fname, def->definition, deflen, line, NULL);
     return push_source(ctx, fname, final, finalLength, line, NULL);
-   // return push_source(ctx, fname, (*omg).data(), (*omg).length(), line, NULL);
 } // handle_pp_identifier
 
 
