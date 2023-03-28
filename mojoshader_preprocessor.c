@@ -1282,31 +1282,28 @@ static int isOpeningParenthesisNext(const char* str, int len)
 
 static int findClosingParenthesis(const char* str, int len)
 {
-    int i, count = 0, last_close = -1;
-    for (i = 0; i < len; i++)
+    int count = 0;
+    int last_close = -1;
+
+    for (int i = 0; i < len; i++)
     {
         if (str[i] == '(')
         {
             count++;
-            if (count == 1)
-            {
-                printf("First opening parenthesis found at position %d\n", i);
-            }
         }
         else if (str[i] == ')')
         {
-            count--;
+            // closing parenthesis without opening
+            if (count == 0)
+                return -1;
+            
+            --count;
+
+            // found it
             if (count == 0)
             {
-                last_close = i;
-                printf("Matching closing parenthesis found at position %d\n", i);
-                return last_close;
+                return i;
             }
-        }
-
-        if (count == 0 && last_close != -1)
-        {
-            break;
         }
     }
 
@@ -1422,6 +1419,9 @@ static int replace_and_push_macro(Context *ctx, const Define *def,
 
 
     char* finalizedMacro = buffer_flatten(buffer);
+    // flatten emptied buffer, we want to concatenate original contents, lets add it back
+    buffer_append(buffer, finalizedMacro, strlen(finalizedMacro));
+
     // find end of the macro it is either separated by empty space or '(' character
     int macroEnd = findMacroEnd(finalizedMacro, strlen(finalizedMacro));
     if (macroEnd > 0)
@@ -1443,8 +1443,6 @@ static int replace_and_push_macro(Context *ctx, const Define *def,
                 int closinParenthesis = findClosingParenthesis(stateOriginal->source, stateOriginal->bytes_left);
                 if (closinParenthesis >= 0)
                 {
-                    // earlier flattern emptied buffer, we want to concatenate original contents, lets add it back
-                    buffer_append(buffer, finalizedMacro, strlen(finalizedMacro));
                     // add the function params to the future include state so it can be processed
                     buffer_append(buffer, stateOriginal->source, closinParenthesis + 1);
 
@@ -1455,7 +1453,6 @@ static int replace_and_push_macro(Context *ctx, const Define *def,
                 }
             }
         }
-
         Free(ctx, possibleMacro);
     }
     Free(ctx, finalizedMacro);
