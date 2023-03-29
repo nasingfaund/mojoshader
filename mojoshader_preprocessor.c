@@ -1251,6 +1251,63 @@ static inline void handle_pp_ifndef(Context *ctx)
 } // handle_pp_ifndef
 
 
+
+static int findMacroEnd(const char* str, int len)
+{
+    for (int i = 0; i < len; i++)
+    {
+        if (str[i] == '(' || isspace(str[i]))
+            return i;
+    }
+
+    return len;
+}
+
+static int isOpeningParenthesisNext(const char* str, int len)
+{
+    for (int i = 0; i < len; i++)
+    {
+        if (isspace(str[i])) continue;
+
+        if (str[i] == '(')
+            return i;
+        else
+            return -1;
+    }
+
+    return -1;
+}
+
+static int findClosingParenthesis(const char* str, int len)
+{
+    int count = 0;
+    int last_close = -1;
+
+    for (int i = 0; i < len; i++)
+    {
+        if (str[i] == '(')
+        {
+            count++;
+        }
+        else if (str[i] == ')')
+        {
+            // closing parenthesis without opening
+            if (count == 0)
+                return -1;
+            
+            --count;
+
+            // found it
+            if (count == 0)
+            {
+                return i;
+            }
+        }
+    }
+
+    return -1;
+}
+
 static int replace_and_push_macro(Context *ctx, const Define *def,
                                   const Define *params)
 {
@@ -1263,6 +1320,9 @@ static int replace_and_push_macro(Context *ctx, const Define *def,
         return 0;
 
     IncludeState *state = ctx->include_stack;
+    const char* fname = state->filename;
+    const unsigned int line = state->line;
+
     if (!push_source(ctx, state->filename, def->definition,
                      strlen(def->definition), state->line, NULL))
     {
@@ -1270,7 +1330,9 @@ static int replace_and_push_macro(Context *ctx, const Define *def,
         return 0;
     } // if
 
+    IncludeState* stateOriginal = state;
     state = ctx->include_stack;
+
     while (lexer(state) != TOKEN_EOI)
     {
         int wantorig = 0;
@@ -1341,15 +1403,58 @@ static int replace_and_push_macro(Context *ctx, const Define *def,
             goto replace_and_push_macro_failed;
     } // while
 
+
+    char* finalizedMacro = buffer_flatten(buffer);
+    // flatten emptied buffer, we want to concatenate original contents, lets add it back
+    buffer_append(buffer, finalizedMacro, strlen(finalizedMacro));
+
+    // Test if the expanded macro is also a macro and accepts params. If it does we need to add the params to the next IncludeState as well so they can be expanded with the macro
+    // find end of the macro it is either separated by empty space or '(' character
+    int macroEnd = findMacroEnd(finalizedMacro, strlen(finalizedMacro));
+    if (macroEnd > 0)
+    {
+        // create a string to test in find_define
+        char* possibleMacro = (char*)Malloc(ctx, macroEnd + 1);
+        memcpy(possibleMacro, finalizedMacro, macroEnd);
+        possibleMacro[macroEnd] = 0;
+
+        // if macro exist
+        if (const Define* def2 = find_define(ctx, possibleMacro))
+        {
+            // is the processing cursor actually pointing to the opening paranthesis?
+            int opening = isOpeningParenthesisNext(stateOriginal->source, stateOriginal->bytes_left);
+            // and does the macro actually accepts params?
+            if (opening >= 0 && def2->paramcount > 0)
+            {
+                // find closing parenthesis of the newly expanded macro
+                int closinParenthesis = findClosingParenthesis(stateOriginal->source, stateOriginal->bytes_left);
+                if (closinParenthesis >= 0)
+                {
+                    // add the function params to the future include state so it can be processed
+                    buffer_append(buffer, stateOriginal->source, closinParenthesis + 1);
+
+                    // move the "cursor" of the original state to reflect that the params were processed
+                    stateOriginal->bytes_left -= closinParenthesis + 1;
+                    stateOriginal->source = stateOriginal->source + closinParenthesis + 1;
+                    stateOriginal->token = stateOriginal->source;
+                }
+            }
+        }
+        Free(ctx, possibleMacro);
+    }
+    Free(ctx, finalizedMacro);
+
+    pop_source(ctx); // ditch the macro.
+
     final = buffer_flatten(buffer);
     if (!final)
         goto replace_and_push_macro_failed;
 
     buffer_destroy(buffer);
-    pop_source(ctx);  // ditch the macro.
+
     state = ctx->include_stack;
-    if (!push_source(ctx, state->filename, final, strlen(final), state->line,
-                     close_define_include))
+
+    if (!push_source(ctx, fname, final, strlen(final), line, close_define_include))
     {
         Free(ctx, final);
         return 0;
@@ -1535,7 +1640,6 @@ handle_macro_args_failed:
     return retval;
 } // handle_macro_args
 
-
 static int handle_pp_identifier(Context *ctx)
 {
     if (ctx->recursion_count++ >= 256)  // !!! FIXME: gcc can figure this out.
@@ -1558,8 +1662,36 @@ static int handle_pp_identifier(Context *ctx)
     else if (def->paramcount != 0)
         return handle_macro_args(ctx, sym, def);
 
+    Buffer* out = buffer_create(128, MallocBridge, FreeBridge, ctx);
+    buffer_append(out, def->definition, strlen(def->definition));
+
+    // Test if the expanded macro is also a macro and accepts params. If it does we need to add the params to the next IncludeState as well so they can be expanded with the macro
+    // does the macro expension convert to another macro?
+    if (const Define* def2 = find_define(ctx, def->definition))
+    {
+        // is the processing cursor actually pointing to the opening parenthesis?
+        int opening = isOpeningParenthesisNext(state->source, state->bytes_left);
+        if (def2->paramcount > 0 && opening)
+        {
+            // find where to end
+            int closingParenthesis = findClosingParenthesis(state->source, strlen(state->source));
+            if (closingParenthesis >= 0)
+            {
+                buffer_append(out, state->source, closingParenthesis+1);
+
+                state->bytes_left -= closingParenthesis + 1 ;
+                state->source = state->source + closingParenthesis + 1;
+                state->token = state->source;
+            }
+        }
+    }
+    
+    size_t finalLength = buffer_size(out);
+    char* final = buffer_flatten(out);
+    buffer_destroy(out);
+
     const size_t deflen = strlen(def->definition);
-    return push_source(ctx, fname, def->definition, deflen, line, NULL);
+    return push_source(ctx, fname, final, finalLength, line, NULL);
 } // handle_pp_identifier
 
 
