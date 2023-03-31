@@ -9,6 +9,7 @@
 
 #define __MOJOSHADER_INTERNAL__ 1
 #include "mojoshader_internal.h"
+#include <ctype.h>
 
 #if DEBUG_PREPROCESSOR
     #define print_debug_token(token, len, val) \
@@ -1419,7 +1420,8 @@ static int replace_and_push_macro(Context *ctx, const Define *def,
         possibleMacro[macroEnd] = 0;
 
         // if macro exist
-        if (const Define* def2 = find_define(ctx, possibleMacro))
+        const Define* def2 = find_define(ctx, possibleMacro);
+        if (def2)
         {
             // is the processing cursor actually pointing to the opening paranthesis?
             int opening = isOpeningParenthesisNext(stateOriginal->source, stateOriginal->bytes_left);
@@ -1427,15 +1429,15 @@ static int replace_and_push_macro(Context *ctx, const Define *def,
             if (opening >= 0 && def2->paramcount > 0)
             {
                 // find closing parenthesis of the newly expanded macro
-                int closinParenthesis = findClosingParenthesis(stateOriginal->source, stateOriginal->bytes_left);
-                if (closinParenthesis >= 0)
+                int closingParenthesis = findClosingParenthesis(stateOriginal->source, stateOriginal->bytes_left);
+                if (closingParenthesis >= 0)
                 {
                     // add the function params to the future include state so it can be processed
-                    buffer_append(buffer, stateOriginal->source, closinParenthesis + 1);
+                    buffer_append(buffer, stateOriginal->source, closingParenthesis + 1);
 
                     // move the "cursor" of the original state to reflect that the params were processed
-                    stateOriginal->bytes_left -= closinParenthesis + 1;
-                    stateOriginal->source = stateOriginal->source + closinParenthesis + 1;
+                    stateOriginal->bytes_left -= closingParenthesis + 1;
+                    stateOriginal->source = stateOriginal->source + closingParenthesis + 1;
                     stateOriginal->token = stateOriginal->source;
                 }
             }
@@ -1667,7 +1669,8 @@ static int handle_pp_identifier(Context *ctx)
 
     // Test if the expanded macro is also a macro and accepts params. If it does we need to add the params to the next IncludeState as well so they can be expanded with the macro
     // does the macro expension convert to another macro?
-    if (const Define* def2 = find_define(ctx, def->definition))
+    const Define* def2 = find_define(ctx, def->definition);
+    if (def2)
     {
         // is the processing cursor actually pointing to the opening parenthesis?
         int opening = isOpeningParenthesisNext(state->source, state->bytes_left);
