@@ -9,6 +9,7 @@
 
 #define __MOJOSHADER_INTERNAL__ 1
 #include "mojoshader_internal.h"
+#include <ctype.h>
 
 #if DEBUG_PREPROCESSOR
     #define print_debug_token(token, len, val) \
